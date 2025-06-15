@@ -13,6 +13,8 @@ from langchain.memory import ConversationBufferMemory
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import requests
+import fitz  # PyMuPDF
+from langchain.schema import Document
 
 # === CONFIG ===
 FOLDER_ID = "1z_zzdbB4zJo70o3rofTqwm30ux9dpRsX"
@@ -28,7 +30,13 @@ credentials = service_account.Credentials.from_service_account_info(
     scopes=["https://www.googleapis.com/auth/drive.readonly"]
 )
 
-
+def load_pdf_with_fitz(filepath):
+    doc = fitz.open(filepath)
+    texts = []
+    for page in doc:
+        texts.append(page.get_text())
+    full_text = "\n".join(texts)
+    return full_text
 
 @st.cache_resource
 def download_google_docs(folder_id, _credentials):
@@ -55,10 +63,10 @@ def download_google_docs(folder_id, _credentials):
 
 @st.cache_resource
 def build_vector_store(docs_paths):
-    loaders = [UnstructuredFileLoader(path) for path in docs_paths]
     documents = []
-    for loader in loaders:
-        documents.extend(loader.load())
+    for path in docs_paths:
+        text = load_pdf_with_fitz(path)
+        documents.append(Document(page_content=text, metadata={"source": path}))
     return Chroma.from_documents(documents, OpenAIEmbeddings())
 
 def web_search(question):
@@ -72,9 +80,9 @@ def web_search(question):
     return "\n".join(answers[:3]) or "Sorry, I couldn't find anything useful online either."
 
 @st.cache_resource
-def setup_chain(vectorstore):
+def setup_chain(_vectorstore):
     memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
+    retriever = _vectorstore.as_retriever(search_kwargs={"k": 4})
     qa_chain = ConversationalRetrievalChain.from_llm(
         llm=ChatOpenAI(temperature=0),
         retriever=retriever,
