@@ -159,10 +159,12 @@ if "qa_chain" not in st.session_state:
 
 question = st.chat_input("Ask something...")
 
+question = st.chat_input("Ask something...")
+
 if question:
     with st.spinner("Thinking..."):
-        answer = st.session_state.qa_chain.run(question)
-
+        result = st.session_state.qa_chain.invoke({"question": question})
+        answer = result["answer"]
 
         fallback_phrases = ["don't know", "not available", "no information"]
         if any(p in answer.lower() for p in fallback_phrases):
@@ -176,3 +178,6 @@ for q, a in st.session_state.chat_history[-5:]:
         st.write(q)
     with st.chat_message("assistant"):
         st.write(a)
+
+
+
