@@ -14,7 +14,7 @@ from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import requests
 import fitz  # PyMuPDF
-from langchain.schema import Document
+from langchain.schema import Document, HumanMessage
 
 # === CONFIG ===
 FOLDER_ID = "1z_zzdbB4zJo70o3rofTqwm30ux9dpRsX"
@@ -69,38 +69,14 @@ def build_vector_store(docs_paths):
         documents.append(Document(page_content=text, metadata={"source": path}))
     return Chroma.from_documents(documents, OpenAIEmbeddings())
 
-def web_search_orig(question):
-    # 1️⃣ Try SerpAPI Google
-    try:
-        params = {"engine": "google", "q": question, "api_key": SERPAPI_KEY}
-        resp = requests.get("https://serpapi.com/search", params=params).json()
-        links = format_serpapi_links(resp)
-        if links:
-            return links
-    except:
-        pass
-
-    # 2️⃣ Try SerpAPI Bing
-    try:
-        params = {"engine": "bing", "q": question, "api_key": SERPAPI_KEY}
-        resp = requests.get("https://serpapi.com/search", params=params).json()
-        links = format_serpapi_links(resp)
-        if links:
-            return links
-    except:
-        pass
-
-    # 3️⃣ Try Brave Search API (example point)
-    try:
-        resp = requests.get(f"https://api.duckduckgo.com/?q={question}&format=json").json()
-        related = resp.get("RelatedTopics", [])[:3]
-        links = [f"- [{r.get('Text')}]({r.get('FirstURL')})" for r in related if r.get("FirstURL")]
-        if links:
-            return "\n".join(links)
-    except:
-        pass
-
-    return "🔎 No useful results found on the web."
+def format_serpapi_links(resp_json):
+    items = resp_json.get("organic_results", [])[:3]
+    links = []
+    for it in items:
+        title, link, snippet = it.get("title"), it.get("link"), it.get("snippet", "")
+        if title and link:
+            links.append(f"[{title}]({link})\n> {snippet}")
+    return "\n\n".join(links)
 
 def web_search(question):
     try:
@@ -123,17 +99,6 @@ def web_search(question):
 
     return "🔎 No useful results found on the web."
 
-
-def format_serpapi_links(resp_json):
-    items = resp_json.get("organic_results", [])[:3]
-    links = []
-    for it in items:
-        title, link, snippet = it.get("title"), it.get("link"), it.get("snippet", "")
-        if title and link:
-            links.append(f"[{title}]({link})\n> {snippet}")
-    return "\n\n".join(links)
-
-
 @st.cache_resource
 def setup_chain(_vectorstore):
     memory = ConversationBufferMemory(
@@ -150,6 +115,17 @@ def setup_chain(_vectorstore):
     )
     return qa_chain
 
+# Updated fallback to use ChatOpenAI correctly
+def ask_chatgpt_fallback(question):
+    chat = ChatOpenAI(temperature=0.7)
+    response = chat([HumanMessage(content=question)])
+    return response.content.strip()
+
+fallback_phrases = [
+    "i don't have information", "i don't know",
+    "not covered", "not available", "best to look up"
+]
+
 # === STREAMLIT UI ===
 st.set_page_config(page_title="Nonprofit Chatbot", layout="wide")
 st.title("📚 AI Chatbot for Nonprofit Docs + Web")
@@ -163,15 +139,6 @@ if "qa_chain" not in st.session_state:
         st.session_state.qa_chain = setup_chain(vectordb)
 
 question = st.chat_input("Ask your question...")
-# Function to get ChatGPT answer
-def ask_chatgpt_fallback(question):
-    resp = ChatOpenAI(temperature=0.7)(question)
-    return resp.strip()
-
-fallback_phrases = [
-    "i don't have information", "i don't know",
-    "not covered", "not available", "best to look up"
-]
 
 if question:
     with st.spinner("Thinking..."):
@@ -197,12 +164,9 @@ if question:
 
         st.session_state.chat_history.append((question, answer))
 
-
-
-# Show history
+# Show chat history
 for q, a in st.session_state.chat_history:
     with st.chat_message("user"):
         st.write(q)
     with st.chat_message("assistant"):
         st.write(a)
-
