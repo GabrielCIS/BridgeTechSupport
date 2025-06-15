@@ -11,7 +11,7 @@ from google.oauth2 import service_account
 import requests
 
 # === CONFIG ===
-FOLDER_ID = "your_google_drive_folder_id"
+FOLDER_ID = "1z_zzdbB4zJo70o3rofTqwm30ux9dpRsX"
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 SERPAPI_KEY = st.secrets["SERPAPI_KEY"]
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
