@@ -8,3 +8,4 @@ serpapi
 langchain_community
 pysqlite3-binary>=0.5.1
 tiktoken
+unstructured[pdf]
