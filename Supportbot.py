@@ -70,25 +70,45 @@ def build_vector_store(docs_paths):
     return Chroma.from_documents(documents, OpenAIEmbeddings())
 
 def web_search(question):
-    params = {
-        "engine": "google",
-        "q": question,
-        "api_key": SERPAPI_KEY
-    }
-    response = requests.get("https://serpapi.com/search", params=params).json()
-    results = response.get("organic_results", [])
-    
-    if not results:
-        return "🔎 No useful results found on the web."
+    # 1️⃣ Try SerpAPI Google
+    try:
+        params = {"engine": "google", "q": question, "api_key": SERPAPI_KEY}
+        resp = requests.get("https://serpapi.com/search", params=params).json()
+        links = format_serpapi_links(resp)
+        if links:
+            return links
+    except:
+        pass
 
-    # Build markdown-style link list
+    # 2️⃣ Try SerpAPI Bing
+    try:
+        params = {"engine": "bing", "q": question, "api_key": SERPAPI_KEY}
+        resp = requests.get("https://serpapi.com/search", params=params).json()
+        links = format_serpapi_links(resp)
+        if links:
+            return links
+    except:
+        pass
+
+    # 3️⃣ Try Brave Search API (example point)
+    try:
+        resp = requests.get(f"https://api.duckduckgo.com/?q={question}&format=json").json()
+        related = resp.get("RelatedTopics", [])[:3]
+        links = [f"- [{r.get('Text')}]({r.get('FirstURL')})" for r in related if r.get("FirstURL")]
+        if links:
+            return "\n".join(links)
+    except:
+        pass
+
+    return "🔎 No useful results found on the web."
+
+def format_serpapi_links(resp_json):
+    items = resp_json.get("organic_results", [])[:3]
     links = []
-    for res in results[:3]:  # Limit to top 3
-        title = res.get("title", "Link")
-        link = res.get("link", "#")
-        snippet = res.get("snippet", "")
-        links.append(f"[{title}]({link})\n> {snippet}")
-
+    for it in items:
+        title, link, snippet = it.get("title"), it.get("link"), it.get("snippet", "")
+        if title and link:
+            links.append(f"[{title}]({link})\n> {snippet}")
     return "\n\n".join(links)
 
 
