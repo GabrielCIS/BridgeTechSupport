@@ -167,7 +167,10 @@ question = st.chat_input("Ask something...")
 
 if question:
     with st.spinner("Thinking..."):
-        result = st.session_state.qa_chain({"question": question})
+        result = st.session_state.qa_chain({
+                "question": question,
+                "chat_history": st.session_state.chat_history
+})
         answer = result["answer"]
 
         fallback_phrases = ["don't know", "not available", "no information"]
