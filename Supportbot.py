@@ -166,7 +166,7 @@ question = st.chat_input("Ask your question...")
 # Function to get ChatGPT answer
 def ask_chatgpt_fallback(question):
     resp = ChatOpenAI(temperature=0.7)(question)
-    return resp.strip() if isinstance(resp, str) else resp.content.strip()
+    return resp.strip()
 
 fallback_phrases = [
     "i don't have information", "i don't know",
