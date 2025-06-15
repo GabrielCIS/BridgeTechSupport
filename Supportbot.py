@@ -124,19 +124,23 @@ def web_search(question):
         return "Web search failed."
 
 @st.cache_resource
+
+from langchain.chains import ConversationalRetrievalChain
 def setup_chain(_vectorstore):
     llm = ChatOpenAI(temperature=0)
-    # Keep only the last 3 exchanges!
     memory = ConversationBufferWindowMemory(
         k=3,
-        return_messages=True
+        return_messages=True,
+        memory_key="chat_history",  # this is default but let's be explicit
     )
     retriever = _vectorstore.as_retriever(search_kwargs={"k": 4})
+    
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
         memory=memory,
-        return_source_documents=True
+        return_source_documents=True,
+        input_key="question",  # ensure LangChain knows the primary input key
     )
     return chain
 
