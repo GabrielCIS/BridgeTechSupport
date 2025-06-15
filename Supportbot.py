@@ -112,9 +112,20 @@ question = st.chat_input("Ask your question...")
 if question:
     with st.spinner("Thinking..."):
         result = st.session_state.qa_chain({"question": question})
-        answer = result["answer"]
-        if not result["source_documents"] or "I don't know" in answer.lower():
-            answer = web_search(question)
+        answer = result["answer"].strip()
+
+        # Check if it's a fallback-worthy answer
+        fallback = False
+        if not result.get("source_documents"):
+            fallback = True
+        elif "i don't know" in answer.lower() or len(answer) < 10:
+            fallback = True
+
+        if fallback:
+            web_answer = web_search(question)
+            # You can replace or append based on style
+            answer = f"{answer}\n\n🔎 Web search suggests:\n{web_answer}" if answer else web_answer
+
         st.session_state.chat_history.append((question, answer))
 
 # Show history
