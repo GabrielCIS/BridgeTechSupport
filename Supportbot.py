@@ -132,7 +132,7 @@ def setup_chain(_vectorstore):
     memory = ConversationBufferWindowMemory(
         k=3,
         return_messages=True,
-        memory_key="chat_history",  # this is default but let's be explicit
+        memory_key="chat_history"  # <- keep this here
     )
     retriever = _vectorstore.as_retriever(search_kwargs={"k": 4})
     
@@ -140,8 +140,8 @@ def setup_chain(_vectorstore):
         llm=llm,
         retriever=retriever,
         memory=memory,
-        return_source_documents=True,
-        input_key="question",  # ensure LangChain knows the primary input key
+        return_source_documents=True
+        # DO NOT include input_key or memory_key here
     )
     return chain
 
