@@ -17,8 +17,17 @@ SERPAPI_KEY = st.secrets["SERPAPI_KEY"]
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 os.environ["SERPAPI_API_KEY"] = SERPAPI_KEY
 
+# === Parse and load Google service account credentials from secrets ===
+credentials_info = json.loads(st.secrets["GOOGLE_CREDENTIALS_JSON"])
+credentials = service_account.Credentials.from_service_account_info(
+    credentials_info,
+    scopes=["https://www.googleapis.com/auth/drive.readonly"]
+)
+
+
+
 @st.cache_resource
-def download_google_docs(folder_id, creds_file="credentials.json"):
+def download_google_docs(folder_id, creds_file=credentials):
     SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
     creds = service_account.Credentials.from_service_account_file(creds_file, scopes=SCOPES)
     service = build('drive', 'v3', credentials=creds)
