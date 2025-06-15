@@ -1,0 +1,8 @@
+openai
+serpapi
+google-api-python-client
+google-auth
+chromadb
+unstructured
+serpapi
+langchain_community
