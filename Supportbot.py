@@ -81,7 +81,11 @@ def web_search(question):
 
 @st.cache_resource
 def setup_chain(_vectorstore):
-    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+    memory = ConversationBufferMemory(
+        memory_key="chat_history",
+        return_messages=True,
+        output_key="answer"  # explicitly tell which output to store
+    )
     retriever = _vectorstore.as_retriever(search_kwargs={"k": 4})
     qa_chain = ConversationalRetrievalChain.from_llm(
         llm=ChatOpenAI(temperature=0),
