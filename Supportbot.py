@@ -76,8 +76,21 @@ def web_search(question):
         "api_key": SERPAPI_KEY
     }
     response = requests.get("https://serpapi.com/search", params=params).json()
-    answers = [res["snippet"] for res in response.get("organic_results", []) if "snippet" in res]
-    return "\n".join(answers[:3]) or "Sorry, I couldn't find anything useful online either."
+    results = response.get("organic_results", [])
+    
+    if not results:
+        return "🔎 No useful results found on the web."
+
+    # Build markdown-style link list
+    links = []
+    for res in results[:3]:  # Limit to top 3
+        title = res.get("title", "Link")
+        link = res.get("link", "#")
+        snippet = res.get("snippet", "")
+        links.append(f"[{title}]({link})\n> {snippet}")
+
+    return "\n\n".join(links)
+
 
 @st.cache_resource
 def setup_chain(_vectorstore):
@@ -112,21 +125,21 @@ question = st.chat_input("Ask your question...")
 if question:
     with st.spinner("Thinking..."):
         result = st.session_state.qa_chain({"question": question})
-        answer = result["answer"].strip()
-
-        # Check if it's a fallback-worthy answer
-        fallback = False
-        if not result.get("source_documents"):
-            fallback = True
-        elif "i don't know" in answer.lower() or len(answer) < 10:
-            fallback = True
+        answer = result.get("answer", "").strip()
+        
+        # Simple fallback trigger check
+        fallback_phrases = [
+            "i don't have information", "not available in the provided context",
+            "i don't know", "i recommend checking", "unfortunately"
+        ]
+        fallback = any(p in answer.lower() for p in fallback_phrases) or len(answer) < 20
 
         if fallback:
             web_answer = web_search(question)
-            # You can replace or append based on style
-            answer = f"{answer}\n\n🔎 Web search suggests:\n{web_answer}" if answer else web_answer
+            answer += f"\n\n---\n🔎 **Based on a web search:**\n\n{web_answer}"
 
         st.session_state.chat_history.append((question, answer))
+
 
 # Show history
 for q, a in st.session_state.chat_history:
