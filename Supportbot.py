@@ -15,6 +15,7 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.schema import Document
 
+
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 from googleapiclient.http import MediaIoBaseDownload
@@ -125,7 +126,7 @@ def web_search(question):
 
 @st.cache_resource
 
-from langchain.chains import ConversationalRetrievalChain
+
 def setup_chain(_vectorstore):
     llm = ChatOpenAI(temperature=0)
     memory = ConversationBufferWindowMemory(
