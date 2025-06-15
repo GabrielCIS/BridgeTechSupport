@@ -1,6 +1,9 @@
 import os
 import json
 import streamlit as st
+import sys
+import pysqlite3
+sys.modules["sqlite3"] = pysqlite3
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.chat_models import ChatOpenAI
