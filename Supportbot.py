@@ -161,8 +161,8 @@ question = st.chat_input("Ask something...")
 
 if question:
     with st.spinner("Thinking..."):
-        result = st.session_state.qa_chain({"question": question})
-        answer = result.get("answer", "")
+        answer = st.session_state.qa_chain.run(question)
+
 
         fallback_phrases = ["don't know", "not available", "no information"]
         if any(p in answer.lower() for p in fallback_phrases):
