@@ -159,7 +159,6 @@ if "qa_chain" not in st.session_state:
 
 question = st.chat_input("Ask something...")
 
-question = st.chat_input("Ask something...")
 
 if question:
     with st.spinner("Thinking..."):
