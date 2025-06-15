@@ -1,4 +1,5 @@
 import os
+import json
 import streamlit as st
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import OpenAIEmbeddings
@@ -27,14 +28,15 @@ credentials = service_account.Credentials.from_service_account_info(
 
 
 @st.cache_resource
-def download_google_docs(folder_id, creds_file=credentials):
-    SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
-    creds = service_account.Credentials.from_service_account_file(creds_file, scopes=SCOPES)
-    service = build('drive', 'v3', credentials=creds)
+def download_google_docs(folder_id, _credentials):
+    service = build('drive', 'v3', credentials=_credentials)
 
-    results = service.files().list(q=f"'{folder_id}' in parents",
-                                   pageSize=10,
-                                   fields="files(id, name, mimeType)").execute()
+    results = service.files().list(
+        q=f"'{folder_id}' in parents and trashed = false",
+        pageSize=10,
+        fields="files(id, name, mimeType)"
+    ).execute()
+
     files = results.get('files', [])
     
     paths = []
@@ -45,6 +47,7 @@ def download_google_docs(folder_id, creds_file=credentials):
             with open(filepath, 'wb') as f:
                 f.write(request.execute())
             paths.append(filepath)
+
     return paths
 
 @st.cache_resource
@@ -85,7 +88,7 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "qa_chain" not in st.session_state:
     with st.spinner("Loading documents and setting up chatbot..."):
-        docs = download_google_docs(FOLDER_ID)
+        docs = download_google_docs(FOLDER_ID, credentials)
         vectordb = build_vector_store(docs)
         st.session_state.qa_chain = setup_chain(vectordb)
 

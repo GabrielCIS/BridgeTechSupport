@@ -6,3 +6,4 @@ chromadb
 unstructured
 serpapi
 langchain_community
+pysqlite3-binary>=0.5.1
