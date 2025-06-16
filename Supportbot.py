@@ -4,6 +4,8 @@ import io
 import csv
 import sys
 import streamlit as st
+import tiktoken
+
 
 import pysqlite3
 sys.modules["sqlite3"] = pysqlite3
@@ -40,6 +42,12 @@ credentials = service_account.Credentials.from_service_account_info(
     credentials_info,
     scopes=["https://www.googleapis.com/auth/drive.readonly"]
 )
+
+# ==== DEBUG ===
+enc = tiktoken.encoding_for_model("gpt-4")  # or "gpt-3.5-turbo"
+
+def estimate_tokens(text):
+    return len(enc.encode(text))
 
 # === HELPERS ===
 def load_pdf(filepath):
@@ -110,7 +118,7 @@ def download_files(folder_id, mime_types, service):
 def build_vectorstore(_documents):
     return Chroma.from_documents(_documents, OpenAIEmbeddings())
 
-def chunk_documents(documents, chunk_size=1000, chunk_overlap=200):
+def chunk_documents_orig(documents, chunk_size=1000, chunk_overlap=200):
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
@@ -122,7 +130,23 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=200):
             chunked_docs.append(Document(page_content=chunk, metadata=doc.metadata))
     return chunked_docs
 
-
+# DEBUG: Add token estimation and logging
+def chunk_documents(documents, chunk_size=1000, chunk_overlap=200):
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    chunked_docs = []
+    for doc in documents:
+        splits = text_splitter.split_text(doc.page_content)
+        for chunk in splits:
+            chunked_docs.append(Document(page_content=chunk, metadata=doc.metadata))
+    # Debug info
+    total_tokens = sum(estimate_tokens(doc.page_content) for doc in chunked_docs)
+    print(f"DEBUG: Chunked into {len(chunked_docs)} documents, total estimated tokens: {total_tokens}")
+    for i, doc in enumerate(chunked_docs[:5]):  # print first 5 chunks info
+        print(f"DEBUG: Chunk {i} tokens: {estimate_tokens(doc.page_content)}, source: {doc.metadata.get('source', 'unknown')}")
+    return chunked_docs
 
 def web_search(question):
     try:
@@ -186,9 +210,16 @@ if "qa_chain" not in st.session_state:
 
 question = st.chat_input("Ask something...")
 
+
 if question:
     with st.spinner("Thinking..."):
-        # Pass only question, NOT chat_history manually
+        # Get retriever results explicitly for debug
+        retriever = st.session_state.qa_chain.retriever
+        docs = retriever.get_relevant_documents(question)
+        print(f"DEBUG: Retriever returned {len(docs)} docs")
+        total_tokens_docs = sum(estimate_tokens(doc.page_content) for doc in docs)
+        print(f"DEBUG: Retriever docs total tokens: {total_tokens_docs}")
+
         result = st.session_state.qa_chain({"question": question})
 
         answer = result["answer"]
