@@ -141,8 +141,12 @@ def setup_chain(_vectorstore):
         retriever=retriever,
         memory=memory,
         return_source_documents=True
-        # DO NOT include input_key or memory_key here
     )
+
+    # 🔍 Debug print to see what keys the chain expects
+    print("DEBUG – chain.input_keys:", chain.input_keys)
+    print("DEBUG – chain.output_keys:", chain.output_keys)
+
     return chain
 
 # === Streamlit UI ===
