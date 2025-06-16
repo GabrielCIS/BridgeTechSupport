@@ -176,7 +176,9 @@ if "qa_chain" not in st.session_state:
         for mt in ["application/pdf", "application/vnd.google-apps.document",
                    "application/vnd.google-apps.spreadsheet", "text/html"]:
             docs.extend(download_files(FOLDER_ID, [mt], service))
-            chunked_docs = chunk_documents(docs)
+
+        chunked_docs = chunk_documents(docs)  # <-- only once after the loop
+
         vectordb = build_vectorstore(chunked_docs)
         st.session_state.qa_chain = setup_chain(vectordb)
         
