@@ -127,10 +127,11 @@ def web_search(question):
 @st.cache_resource
 
 
+@st.cache_resource
 def setup_chain(_vectorstore):
     llm = ChatOpenAI(temperature=0)
     memory = ConversationBufferWindowMemory(
-        k=3,
+        k=3,  # only keep last 3 interactions in memory
         return_messages=True,
         memory_key="chat_history"
     )
@@ -142,10 +143,6 @@ def setup_chain(_vectorstore):
         memory=memory,
         return_source_documents=True
     )
-
-    # Use st.write to show keys inside the Streamlit app
-    st.write("DEBUG – chain.input_keys:", chain.input_keys)
-    st.write("DEBUG – chain.output_keys:", chain.output_keys)
 
     return chain
 
@@ -168,13 +165,11 @@ if "qa_chain" not in st.session_state:
 
 question = st.chat_input("Ask something...")
 
-
 if question:
     with st.spinner("Thinking..."):
-        result = st.session_state.qa_chain({
-                "question": question,
-                "chat_history": st.session_state.chat_history
-})
+        # Pass only question, NOT chat_history manually
+        result = st.session_state.qa_chain({"question": question})
+
         answer = result["answer"]
 
         fallback_phrases = ["don't know", "not available", "no information"]
@@ -182,13 +177,17 @@ if question:
             web_answer = web_search(question)
             answer = f"🌐 Web answer:\n\n{web_answer}"
 
+        # Append to local chat_history to show chat UI
         st.session_state.chat_history.append((question, answer))
 
+        # Periodically clear chat history and memory to avoid token overflow
+        if len(st.session_state.chat_history) > 20:
+            st.session_state.chat_history = []
+            st.session_state.qa_chain.memory.clear()
+
+# Render last 5 messages in chat UI
 for q, a in st.session_state.chat_history[-5:]:
     with st.chat_message("user"):
         st.write(q)
     with st.chat_message("assistant"):
         st.write(a)
-
-
-
