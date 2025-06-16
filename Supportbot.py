@@ -132,10 +132,10 @@ def setup_chain(_vectorstore):
     memory = ConversationBufferWindowMemory(
         k=3,
         return_messages=True,
-        memory_key="chat_history"  # <- keep this here
+        memory_key="chat_history"
     )
     retriever = _vectorstore.as_retriever(search_kwargs={"k": 4})
-    
+
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=retriever,
@@ -143,9 +143,9 @@ def setup_chain(_vectorstore):
         return_source_documents=True
     )
 
-    # 🔍 Debug print to see what keys the chain expects
-    print("DEBUG – chain.input_keys:", chain.input_keys)
-    print("DEBUG – chain.output_keys:", chain.output_keys)
+    # Use st.write to show keys inside the Streamlit app
+    st.write("DEBUG – chain.input_keys:", chain.input_keys)
+    st.write("DEBUG – chain.output_keys:", chain.output_keys)
 
     return chain
 
