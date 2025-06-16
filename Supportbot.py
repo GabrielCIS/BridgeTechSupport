@@ -14,6 +14,8 @@ from langchain_community.chat_models import ChatOpenAI
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.schema import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 
 
 from googleapiclient.discovery import build
@@ -108,6 +110,20 @@ def download_files(folder_id, mime_types, service):
 def build_vectorstore(_documents):
     return Chroma.from_documents(_documents, OpenAIEmbeddings())
 
+def chunk_documents(documents, chunk_size=1000, chunk_overlap=200):
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    chunked_docs = []
+    for doc in documents:
+        splits = text_splitter.split_text(doc.page_content)
+        for chunk in splits:
+            chunked_docs.append(Document(page_content=chunk, metadata=doc.metadata))
+    return chunked_docs
+
+
+
 def web_search(question):
     try:
         params = {"engine": "google", "q": question, "api_key": SERPAPI_KEY}
@@ -135,7 +151,7 @@ def setup_chain(_vectorstore):
         return_messages=True,
         memory_key="chat_history"
     )
-    retriever = _vectorstore.as_retriever(search_kwargs={"k": 4})
+    retriever = _vectorstore.as_retriever(search_kwargs={"k": 2})
 
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
@@ -160,8 +176,11 @@ if "qa_chain" not in st.session_state:
         for mt in ["application/pdf", "application/vnd.google-apps.document",
                    "application/vnd.google-apps.spreadsheet", "text/html"]:
             docs.extend(download_files(FOLDER_ID, [mt], service))
-        vectordb = build_vectorstore(docs)
+            chunked_docs = chunk_documents(docs)
+        vectordb = build_vectorstore(chunked_docs)
         st.session_state.qa_chain = setup_chain(vectordb)
+        
+
 
 question = st.chat_input("Ask something...")
 
