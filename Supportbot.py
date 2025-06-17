@@ -236,6 +236,22 @@ if st.session_state.rag_chain is None:
             st.error("No documents or images could be processed. Please check your folder and permissions."); st.stop()
         chunked_docs = chunk_documents(all_docs)
 
+        # --- START temporary debug block ---
+        print("\n" + "="*50)
+        print("DEBUG: Checking chunks for the target document")
+        # Replace with the name of your specific file
+        target_source_file = "YOUR_DOCUMENT_NAME_HERE.pdf" 
+        found_chunks = False
+        for i, chunk in enumerate(chunked_docs):
+            if chunk.metadata.get('source') == target_source_file:
+                found_chunks = True
+                print(f"\n--- Chunk {i} from {target_source_file} ---")
+                print(chunk.page_content)
+        if not found_chunks:
+            print(f"DEBUG: No chunks were found for the source file: {target_source_file}")
+        print("="*50 + "\n")
+        # --- END temporary debug block ---
+
         # 4. Build Vector Store and Chain
         st.write("Step 4/4: Building vector store and initializing RAG chain...")
         vectordb = build_vectorstore(chunked_docs)
