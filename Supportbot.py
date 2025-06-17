@@ -171,9 +171,10 @@ def web_search(question):
 def setup_chain(_vectorstore):
     llm = ChatOpenAI(temperature=0)
     memory = ConversationBufferWindowMemory(
-        k=3,  # only keep last 3 interactions in memory
+        k=3,
         return_messages=True,
-        memory_key="chat_history"
+        memory_key="chat_history",
+        output_key='answer'  # Add this line
     )
     retriever = _vectorstore.as_retriever(search_kwargs={"k": 2})
 
