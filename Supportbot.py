@@ -163,4 +163,129 @@ def ask_chatgpt(question):
     """Gets a direct answer from a general-purpose OpenAI model (the 'ChatGPT' source)."""
     print("DEBUG: Asking general knowledge source (ChatGPT).")
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are a helpful assistant
+        ("system", "You are a helpful assistant. Answer the user's question clearly and concisely."),
+        ("human", "{question}")
+    ])
+    llm = ChatOpenAI(temperature=0.7, model_name="gpt-4")
+    chain = prompt | llm | StrOutputParser()
+    return chain.invoke({"question": question})
+
+# === LANGCHAIN SETUP FOR RAG (Primary Source) ===
+
+@st.cache_resource
+def build_vectorstore(_documents):
+    """Builds a Chroma vector store from documents."""
+    return Chroma.from_documents(_documents, OpenAIEmbeddings())
+
+@st.cache_resource
+def setup_rag_chain(_vectorstore):
+    """Sets up the ConversationalRetrievalChain for document-based Q&A (RAG)."""
+    _template = """Given the following conversation and a follow up question, rephrase the follow up question to be a standalone question, in its original language.
+    Chat History: {chat_history}
+    Follow Up Input: {question}
+    Standalone question:"""
+    CONDENSE_QUESTION_PROMPT = PromptTemplate.from_template(_template)
+
+    qa_template = """You are an expert assistant for answering questions based on provided documents.
+    Your goal is to provide accurate answers from the given context. Only use the context provided.
+    Context: {context}
+    Question: {question}
+    Instructions: If the context does not contain enough information, you MUST respond with the single word 'NO_ANSWER' and nothing else.
+    Answer:"""
+    CUSTOM_QUESTION_PROMPT = PromptTemplate.from_template(qa_template)
+
+    llm = ChatOpenAI(temperature=0, model_name="gpt-4")
+    memory = ConversationBufferWindowMemory(k=3, return_messages=True, memory_key="chat_history", output_key='answer')
+    retriever = _vectorstore.as_retriever(search_kwargs={"k": 3})
+
+    chain = ConversationalRetrievalChain.from_llm(
+        llm=llm,
+        retriever=retriever,
+        memory=memory,
+        condense_question_prompt=CONDENSE_QUESTION_PROMPT,
+        combine_docs_chain_kwargs={"prompt": CUSTOM_QUESTION_PROMPT},
+        return_source_documents=True
+    )
+    return chain
+
+# === STREAMLIT UI ===
+
+st.set_page_config(page_title="Tiered RAG Chatbot", layout="wide")
+st.title("📚🤖🌐 Tiered AI Chatbot")
+st.info("This bot answers in three stages: 1. Your Documents, 2. AI Assistant (ChatGPT), 3. Web Search.")
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "rag_chain" not in st.session_state:
+    st.session_state.rag_chain = None
+
+if st.session_state.rag_chain is None:
+    with st.spinner("Initializing: Loading documents and setting up the RAG chain..."):
+        if FOLDER_ID == "YOUR_GOOGLE_DRIVE_FOLDER_ID": # Replace with your actual ID
+            st.warning("Please replace 'YOUR_GOOGLE_DRIVE_FOLDER_ID' with your actual Google Drive folder ID in the code.", icon="⚠️")
+            st.stop()
+        
+        docs = download_and_process_files(FOLDER_ID, DRIVE_SERVICE)
+        if not docs:
+            st.error("No documents were found or processed. Please check the folder ID and file permissions.")
+            st.stop()
+
+        chunked_docs = chunk_documents(docs)
+        vectordb = build_vectorstore(chunked_docs)
+        st.session_state.rag_chain = setup_rag_chain(vectordb)
+        st.success("Initialization complete.")
+
+# Display previous chat messages
+for q, a in st.session_state.chat_history:
+    with st.chat_message("user"):
+        st.write(q)
+    with st.chat_message("assistant"):
+        st.write(a)
+
+# Handle new user input
+if question := st.chat_input("Ask a question..."):
+    if st.session_state.rag_chain is None:
+        st.error("The chatbot is not initialized. Please refresh the page.")
+        st.stop()
+        
+    st.session_state.chat_history.append((question, ""))
+    with st.chat_message("user"):
+        st.write(question)
+    
+    with st.chat_message("assistant"):
+        with st.spinner("Checking documents..."):
+            message_placeholder = st.empty()
+            
+            # --- TIER 1: RAG (Your Documents) ---
+            rag_result = st.session_state.rag_chain({"question": question})
+            rag_answer = rag_result["answer"].strip()
+
+            if rag_answer != "NO_ANSWER":
+                final_answer = f"📄 **From Documents:**\n\n{rag_answer}"
+                message_placeholder.markdown(final_answer)
+            else:
+                # --- TIER 2: ChatGPT (General Knowledge) ---
+                message_placeholder.markdown("No answer in documents. Asking AI assistant...")
+                with st.spinner("Asking AI assistant..."):
+                    chatgpt_answer = ask_chatgpt(question)
+                    
+                    # Simple check to see if the AI model can't answer
+                    # Models are often trained to mention their knowledge cutoff date
+                    fallback_triggers = [
+                        "as of my last update", "my knowledge cutoff", "i don't have real-time", 
+                        "i cannot access the internet", "i am unable to provide"
+                    ]
+                    
+                    if not any(trigger in chatgpt_answer.lower() for trigger in fallback_triggers):
+                        final_answer = f"🤖 **From AI Assistant:**\n\n{chatgpt_answer}"
+                        message_placeholder.markdown(final_answer)
+                    else:
+                        # --- TIER 3: Web Search ---
+                        message_placeholder.markdown("AI assistant has limited info. Searching the web...")
+                        with st.spinner("Searching the web..."):
+                            web_answer = web_search(question)
+                            final_answer = f"🌐 **From Web Search:**\n\n{web_answer}"
+                            message_placeholder.markdown(final_answer)
+
+    # Append the final answer to the full chat history
+    st.session_state.chat_history[-1] = (question, final_answer)
