@@ -35,7 +35,7 @@ import fitz  # PyMuPDF
 
 # === CONFIGURATION & SECRETS ===
 # IMPORTANT: Replace with your actual Google Drive folder ID
-FOLDER_ID = "YOUR_GOOGLE_DRIVE_FOLDER_ID" 
+FOLDER_ID = "1z_zzdbB4zJo70o3rofTqwm30ux9dpRsX" 
 
 # Load secrets from Streamlit's secrets management
 try:
