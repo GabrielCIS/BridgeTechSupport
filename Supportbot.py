@@ -17,8 +17,8 @@ from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.chat_models import ChatOpenAI
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferWindowMemory
-from langchain.prompts import PromptTemplate
-from langchain.schema import Document
+from langchain.prompts import PromptTemplate, ChatPromptTemplate
+from langchain.schema import Document, StrOutputParser
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # Google API components
@@ -30,7 +30,7 @@ from googleapiclient.http import MediaIoBaseDownload
 import fitz  # PyMuPDF
 
 # === CONFIGURATION & SECRETS ===
-# It's recommended to set your Google Drive folder ID here
+# IMPORTANT: Replace with your actual Google Drive folder ID
 FOLDER_ID = "1z_zzdbB4zJo70o3rofTqwm30ux9dpRsX" 
 
 # Load secrets from Streamlit's secrets management
@@ -133,177 +133,34 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=200):
         chunk_overlap=chunk_overlap,
     )
     chunked_docs = text_splitter.split_documents(documents)
-    
-    # Debug info
     total_tokens = sum(estimate_tokens(doc.page_content) for doc in chunked_docs)
     print(f"DEBUG: Chunked into {len(chunked_docs)} documents, total estimated tokens: {total_tokens}")
     return chunked_docs
 
+# === KNOWLEDGE SOURCE FUNCTIONS ===
+
 def web_search(question):
     """Performs a web search using SerpApi and returns formatted results."""
     try:
-        params = {
-            "engine": "google",
-            "q": question,
-            "api_key": SERPAPI_KEY
-        }
-        # Increased timeout for more reliability
+        params = {"engine": "google", "q": question, "api_key": SERPAPI_KEY}
         resp = requests.get("https://serpapi.com/search", params=params, timeout=10)
-        
-        # This line will raise an error for bad responses (like 4xx or 5xx)
-        resp.raise_for_status() 
-        
+        resp.raise_for_status()
         data = resp.json()
-        results = data.get("organic_results", [])[:3]
         
         if "error" in data:
-            # SerpApi often returns a 200 OK but with an error message in the JSON
             return f"Web search failed: SerpApi returned an error - {data.get('error')}"
 
-        output = []
-        for r in results:
-            title = r.get("title")
-            link = r.get("link")
-            snippet = r.get("snippet", "")
-            if title and link:
-                output.append(f"[{title}]({link})\n> {snippet}")
-        
+        results = data.get("organic_results", [])[:3]
+        output = [f"[{r.get('title')}]({r.get('link')})\n> {r.get('snippet', '')}" for r in results if r.get('title') and r.get('link')]
         return "\n\n".join(output) if output else "No results found."
 
     except requests.exceptions.Timeout:
-        print("Web search failed: The request timed out.")
         return "Web search failed: The request to SerpApi timed out."
     except requests.exceptions.RequestException as e:
-        # This will catch most other network-related errors
-        print(f"Web search failed: {e}")
-        return f"Web search failed: A network error occurred. **Details:** {e}"
+        return f"Web search failed: A network error occurred. Details: {e}"
 
-# === LANGCHAIN SETUP ===
-
-@st.cache_resource
-def build_vectorstore(_documents):
-    """Builds a Chroma vector store from documents."""
-    return Chroma.from_documents(_documents, OpenAIEmbeddings())
-
-@st.cache_resource
-def setup_chain(_vectorstore):
-    """Sets up the ConversationalRetrievalChain with custom prompts for robust fallback."""
-    # 1. Condense Question Prompt: Merges chat history and a new question into a standalone question.
-    _template = """Given the following conversation and a follow up question, rephrase the follow up question to be a standalone question, in its original language.
-
-Chat History:
-{chat_history}
-Follow Up Input: {question}
-Standalone question:"""
-    CONDENSE_QUESTION_PROMPT = PromptTemplate.from_template(_template)
-
-    # 2. QA Prompt: The main prompt for answering, with a specific instruction for when the answer is not found.
-    qa_template = """You are an expert assistant for answering questions based on provided documents.
-Your goal is to provide accurate and concise answers from the given context.
-Do not make up information. Only use the context provided below.
-
-Context:
-{context}
-
-Question:
-{question}
-
----
-Instructions:
-- Analyze the context and the question carefully.
-- If the context contains the answer, provide it directly.
-- If the context does not contain enough information to answer the question, you MUST respond with the single word 'NO_ANSWER' and nothing else.
-- Do not add any pleasantries or introductory phrases to your answer.
-
-Answer:
-"""
-    CUSTOM_QUESTION_PROMPT = PromptTemplate.from_template(qa_template)
-
-    # 3. Initialize LLM, Memory, and Retriever
-    llm = ChatOpenAI(temperature=0, model_name="gpt-4")
-    memory = ConversationBufferWindowMemory(
-        k=3,
-        return_messages=True,
-        memory_key="chat_history",
-        output_key='answer'
-    )
-    retriever = _vectorstore.as_retriever(search_kwargs={"k": 3})
-
-    # 4. Create the chain with custom prompts
-    chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=retriever,
-        memory=memory,
-        condense_question_prompt=CONDENSE_QUESTION_PROMPT,
-        combine_docs_chain_kwargs={"prompt": CUSTOM_QUESTION_PROMPT},
-        return_source_documents=True
-    )
-    return chain
-
-# === STREAMLIT UI ===
-
-st.set_page_config(page_title="RAG Chatbot", layout="wide")
-st.title("📚 AI Chatbot with Web Search Fallback")
-st.info("This chatbot answers questions based on documents from a Google Drive folder. If it can't find an answer in the documents, it will automatically search the web.")
-
-# Initialize session state for chat history and the chain
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "qa_chain" not in st.session_state:
-    st.session_state.qa_chain = None
-
-# On first run, load documents and set up the chain
-if st.session_state.qa_chain is None:
-    with st.spinner("Initializing: Loading documents from Google Drive, chunking, and building vector store..."):
-        if FOLDER_ID == "YOUR_GOOGLE_DRIVE_FOLDER_ID":
-            st.warning("Please replace 'YOUR_GOOGLE_DRIVE_FOLDER_ID' with your actual Google Drive folder ID in the code.", icon="⚠️")
-            st.stop()
-        
-        docs = download_and_process_files(FOLDER_ID, DRIVE_SERVICE)
-        if not docs:
-            st.error("No documents were found or processed from the specified Google Drive folder. Please check the folder ID and file permissions.")
-            st.stop()
-
-        chunked_docs = chunk_documents(docs)
-        vectordb = build_vectorstore(chunked_docs)
-        st.session_state.qa_chain = setup_chain(vectordb)
-        st.success("Initialization complete. You can now ask questions.")
-
-
-# Display previous chat messages
-for q, a in st.session_state.chat_history:
-    with st.chat_message("user"):
-        st.write(q)
-    with st.chat_message("assistant"):
-        st.write(a)
-
-# Handle new user input
-if question := st.chat_input("Ask a question about the documents..."):
-    if st.session_state.qa_chain is None:
-        st.error("The chatbot is not initialized. Please refresh the page.")
-        st.stop()
-        
-    st.session_state.chat_history.append((question, ""))
-    with st.chat_message("user"):
-        st.write(question)
-    
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            message_placeholder = st.empty()
-            
-            # Call the chain
-            result = st.session_state.qa_chain({"question": question})
-            answer = result["answer"].strip()
-
-            # Implement the robust fallback logic
-            if answer == "NO_ANSWER":
-                message_placeholder.markdown("Couldn't find an answer in the documents. Searching the web...")
-                web_answer = web_search(question)
-                final_answer = f"I couldn't find a specific answer in the provided documents. A web search suggests the following:\n\n---\n\n{web_answer}"
-            else:
-                final_answer = answer
-
-            message_placeholder.markdown(final_answer)
-
-    # Append the final answer to the full chat history
-    st.session_state.chat_history[-1] = (question, final_answer)
+def ask_chatgpt(question):
+    """Gets a direct answer from a general-purpose OpenAI model (the 'ChatGPT' source)."""
+    print("DEBUG: Asking general knowledge source (ChatGPT).")
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful assistant
