@@ -23,7 +23,6 @@ from langchain.schema import Document, StrOutputParser
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.messages import HumanMessage
 
-
 # Google API components
 import google.generativeai as genai
 from googleapiclient.discovery import build
@@ -35,7 +34,7 @@ import fitz  # PyMuPDF
 
 # === CONFIGURATION & SECRETS ===
 # IMPORTANT: Replace with your actual Google Drive folder ID
-FOLDER_ID = "1z_zzdbB4zJo70o3rofTqwm30ux9dpRsX" 
+FOLDER_ID = "YOUR_GOOGLE_DRIVE_FOLDER_ID" 
 
 # Load secrets from Streamlit's secrets management
 try:
@@ -79,69 +78,45 @@ def load_pdf_text(filepath):
     return "\n".join([page.get_text() for page in doc])
 
 def download_and_process_files(folder_id, service):
-    """
-    Downloads files from Google Drive, separating text documents and images.
-    Returns two lists: one for text-based documents, one for image file metadata.
-    """
     text_documents = []
-    image_files = [] # Stores {'id': file_id, 'name': file_name}
+    image_files = [] 
     
     query = f"'{folder_id}' in parents and trashed = false"
     files = service.files().list(q=query, pageSize=100, fields="files(id, name, mimeType)").execute().get('files', [])
     st.write(f"Found {len(files)} total items in Google Drive folder.")
 
-    text_mime_types = {
-        "application/pdf": "application/pdf",
-        "application/vnd.google-apps.document": "text/plain",
-        "application/vnd.google-apps.spreadsheet": "text/csv",
-        "text/html": "text/html"
-    }
+    text_mime_types = {"application/pdf": "application/pdf", "application/vnd.google-apps.document": "text/plain", "application/vnd.google-apps.spreadsheet": "text/csv", "text/html": "text/html"}
     image_mime_types = ["image/jpeg", "image/png"]
 
     for file in files:
         file_id, file_name, mime_type = file['id'], file['name'], file['mimeType']
-        
         try:
             if mime_type in text_mime_types:
-                text = ""
-                if mime_type == "application/pdf":
-                    request = service.files().get_media(fileId=file_id)
-                    with open(f"/tmp/{file_name}", "wb") as f:
-                        MediaIoBaseDownload(f, request).next_chunk()
-                    text = load_pdf_text(f"/tmp/{file_name}")
-                else:
-                    export_mime_type = text_mime_types[mime_type]
-                    request = service.files().export_media(fileId=file_id, mimeType=export_mime_type)
-                    fh = io.BytesIO()
-                    MediaIoBaseDownload(fh, request).next_chunk()
-                    text = fh.getvalue().decode("utf-8", errors='ignore')
-                    if export_mime_type == "text/csv":
-                        rows = csv.reader(text.splitlines())
-                        text = "\n".join([", ".join(row) for row in rows])
+                request = service.files().export_media(fileId=file_id, mimeType=text_mime_types[mime_type]) if "google-apps" in mime_type else service.files().get_media(fileId=file_id)
+                fh = io.BytesIO()
+                MediaIoBaseDownload(fh, request).next_chunk()
+                text = fh.getvalue().decode("utf-8", errors='ignore')
+                if text_mime_types[mime_type] == "text/csv":
+                    rows = csv.reader(text.splitlines())
+                    text = "\n".join([", ".join(row) for row in rows])
                 text_documents.append(Document(page_content=text, metadata={"source": file_name}))
-
             elif mime_type in image_mime_types:
                 image_files.append({'id': file_id, 'name': file_name})
-                print(f"DEBUG: Identified image file: {file_name}")
-
         except Exception as e:
             st.warning(f"Could not process file: {file_name}. Reason: {e}")
 
     return text_documents, image_files
 
 def generate_caption_for_image(file_id, service):
-    """Downloads an image from Drive, gets a caption from Gemini Pro Vision."""
     print(f"DEBUG: Generating caption for image ID: {file_id} using Gemini")
     try:
         request = service.files().get_media(fileId=file_id)
         fh = io.BytesIO()
         MediaIoBaseDownload(fh, request).next_chunk()
         image_data = fh.getvalue()
-
         model = genai.GenerativeModel('gemini-pro-vision')
         prompt_text = "Describe this architectural image or technical diagram in detail. Mention the style, materials, key components, connections, and overall impression. This description will be used to search for the image later."
         contents = [prompt_text, {"mime_type": "image/jpeg", "data": image_data}]
-
         response = model.generate_content(contents)
         response.resolve()
         return response.text
@@ -150,29 +125,12 @@ def generate_caption_for_image(file_id, service):
         return None
 
 def chunk_documents(documents, chunk_size=1500, chunk_overlap=500):
+    """Chunking with parameters found to be effective during debugging."""
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     return text_splitter.split_documents(documents)
 
 # === KNOWLEDGE SOURCE & LANGCHAIN FUNCTIONS ===
 
-def web_search(question):
-    # ... (code for web_search remains the same)
-    pass # Placeholder
-
-def ask_chatgpt(question):
-    # ... (code for ask_chatgpt remains the same)
-    pass # Placeholder
-
-@st.cache_resource
-def build_vectorstore(_documents):
-    return Chroma.from_documents(_documents, OpenAIEmbeddings())
-
-@st.cache_resource
-def setup_rag_chain(_vectorstore):
-    # ... (code for setup_rag_chain remains the same)
-    pass # Placeholder
-
-# Placeholder definitions for web_search, ask_chatgpt, setup_rag_chain to make code runnable
 def web_search(question):
     try:
         params = {"engine": "google", "q": question, "api_key": SERPAPI_KEY}
@@ -189,16 +147,49 @@ def ask_chatgpt(question):
     return llm.invoke(f"You are a helpful assistant. Answer the user's question clearly and concisely.\n\nQuestion: {question}").content
 
 @st.cache_resource
+def build_vectorstore(_documents):
+    return Chroma.from_documents(_documents, OpenAIEmbeddings())
+
+@st.cache_resource
 def setup_rag_chain(_vectorstore):
     _template = "Given the following conversation and a follow up question, rephrase the follow up question to be a standalone question... Chat History: {chat_history}\nFollow Up Input: {question}\nStandalone question:"
     CONDENSE_QUESTION_PROMPT = PromptTemplate.from_template(_template)
-    qa_template = "You are an expert assistant for answering questions based on provided documents... Context: {context}\nQuestion: {question}\nInstructions: If the context does not contain enough information, you MUST respond with the single word 'NO_ANSWER'... Answer:"
+    
+    # --- "Softened" Prompt ---
+    # This version is less strict, giving the LLM more flexibility to answer
+    # if the context is relevant but not a perfect 100% match.
+    qa_template = """You are an expert assistant for answering questions based on provided documents.
+    Your goal is to provide accurate answers from the given context. Use only the context provided below.
+
+    Context:
+    {context}
+
+    Question:
+    {question}
+    
+    Instructions:
+    Based only on the context provided, answer the question.
+    If the context does not contain the answer, simply say that you could not find the answer in the provided documents. Do not make up an answer.
+
+    Answer:
+    """
     CUSTOM_QUESTION_PROMPT = PromptTemplate.from_template(qa_template)
+    
     llm = ChatOpenAI(temperature=0, model_name="gpt-4")
     memory = ConversationBufferWindowMemory(k=3, return_messages=True, memory_key="chat_history", output_key='answer')
+    
+    # --- Key Tuning Parameter `k` ---
+    # This value was increased during debugging. It's a key parameter to adjust.
     retriever = _vectorstore.as_retriever(search_kwargs={"k": 10})
-    return ConversationalRetrievalChain.from_llm(llm=llm, retriever=retriever, memory=memory, condense_question_prompt=CONDENSE_QUESTION_PROMPT, combine_docs_chain_kwargs={"prompt": CUSTOM_QUESTION_PROMPT}, return_source_documents=True)
-
+    
+    return ConversationalRetrievalChain.from_llm(
+        llm=llm, 
+        retriever=retriever, 
+        memory=memory, 
+        condense_question_prompt=CONDENSE_QUESTION_PROMPT, 
+        combine_docs_chain_kwargs={"prompt": CUSTOM_QUESTION_PROMPT}, 
+        return_source_documents=True
+    )
 
 # === STREAMLIT UI ===
 st.set_page_config(page_title="Multimodal RAG Chatbot", layout="wide")
@@ -212,47 +203,21 @@ if "rag_chain" not in st.session_state:
     st.session_state.rag_chain = None
 
 if st.session_state.rag_chain is None:
-    with st.spinner("Initializing: Loading documents and processing images... This may take a while for new images."):
+    with st.spinner("Initializing: This may take a while for new images..."):
         if FOLDER_ID == "YOUR_GOOGLE_DRIVE_FOLDER_ID":
-            st.warning("Please update the FOLDER_ID in the script.", icon="⚠️")
-            st.stop()
-
-        # 1. Download text docs and identify images
+            st.warning("Please update the FOLDER_ID in the script.", icon="⚠️"); st.stop()
+        
         st.write("Step 1/4: Loading files from Google Drive...")
         text_docs, image_files = download_and_process_files(FOLDER_ID, DRIVE_SERVICE)
-
-        # 2. Generate captions for images
-        st.write(f"Step 2/4: Found {len(image_files)} images. Generating captions using Gemini Vision...")
-        caption_docs = []
-        for image_file in image_files:
-            caption = generate_caption_for_image(image_file['id'], DRIVE_SERVICE)
-            if caption:
-                caption_docs.append(Document(page_content=caption, metadata={'source': image_file['name'], 'is_image_caption': True, 'image_file_id': image_file['id']}))
         
-        # 3. Combine and chunk
+        st.write(f"Step 2/4: Found {len(image_files)} images. Generating captions using Gemini Vision...")
+        caption_docs = [Document(page_content=caption, metadata={'source': img['name'], 'is_image_caption': True, 'image_file_id': img['id']}) for img in image_files if (caption := generate_caption_for_image(img['id'], DRIVE_SERVICE))]
+        
         st.write("Step 3/4: Combining and chunking all content...")
         all_docs = text_docs + caption_docs
-        if not all_docs:
-            st.error("No documents or images could be processed. Please check your folder and permissions."); st.stop()
+        if not all_docs: st.error("No documents or images could be processed."); st.stop()
         chunked_docs = chunk_documents(all_docs)
-
-        # --- START temporary debug block ---
-        print("\n" + "="*50)
-        print("DEBUG: Checking chunks for the target document")
-        # Replace with the name of your specific file
-        target_source_file = "YOUR_DOCUMENT_NAME_HERE.pdf" 
-        found_chunks = False
-        for i, chunk in enumerate(chunked_docs):
-            if chunk.metadata.get('source') == target_source_file:
-                found_chunks = True
-                print(f"\n--- Chunk {i} from {target_source_file} ---")
-                print(chunk.page_content)
-        if not found_chunks:
-            print(f"DEBUG: No chunks were found for the source file: {target_source_file}")
-        print("="*50 + "\n")
-        # --- END temporary debug block ---
-
-        # 4. Build Vector Store and Chain
+        
         st.write("Step 4/4: Building vector store and initializing RAG chain...")
         vectordb = build_vectorstore(chunked_docs)
         st.session_state.rag_chain = setup_rag_chain(vectordb)
@@ -271,7 +236,6 @@ if question := st.chat_input("Ask about your documents or diagrams..."):
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         with st.spinner("Thinking..."):
-            # --- TIER 1: RAG on Docs & Image Captions ---
             rag_result = st.session_state.rag_chain({"question": question})
             
             source_is_image, retrieved_image_id = False, None
@@ -282,81 +246,60 @@ if question := st.chat_input("Ask about your documents or diagrams..."):
                         break
             
             if source_is_image and retrieved_image_id:
-                # --- Vision Analysis Path ---
                 message_placeholder.markdown("Found a relevant image. Analyzing with Gemini Vision...")
                 try:
                     request = DRIVE_SERVICE.files().get_media(fileId=retrieved_image_id)
                     fh = io.BytesIO()
                     MediaIoBaseDownload(fh, request).next_chunk()
                     image_data = fh.getvalue()
-                    
                     model = genai.GenerativeModel('gemini-pro-vision')
                     contents = [question, {"mime_type": "image/jpeg", "data": image_data}]
                     response = model.generate_content(contents); response.resolve()
                     final_answer = f"🖼️ **From Image Analysis (Gemini):**\n\n{response.text}"
-                except Exception as e:
-                    final_answer = f"Sorry, I failed to analyze the image. Error: {e}"
-                message_placeholder.markdown(final_answer)
-
-            elif rag_result["answer"].strip() != "NO_ANSWER":
-                # --- Standard Text Document Path ---
+                except Exception as e: final_answer = f"Sorry, I failed to analyze the image. Error: {e}"
+            elif "could not find the answer" not in rag_result["answer"]:
                 final_answer = f"📄 **From Documents:**\n\n{rag_result['answer']}"
-                message_placeholder.markdown(final_answer)
             else:
-                # --- Fallback Path ---
                 message_placeholder.markdown("No answer in documents. Asking AI assistant...")
                 chatgpt_answer = ask_chatgpt(question)
-                if not any(trigger in chatgpt_answer.lower() for trigger in ["as of my last update", "my knowledge cutoff", "i don't have real-time"]):
+                if not any(trigger in chatgpt_answer.lower() for trigger in ["as of my last update", "my knowledge cutoff"]):
                     final_answer = f"🤖 **From AI Assistant:**\n\n{chatgpt_answer}"
                 else:
                     message_placeholder.markdown("AI assistant has limited info. Searching the web...")
                     web_answer = web_search(question)
                     final_answer = f"🌐 **From Web Search:**\n\n{web_answer}"
-                message_placeholder.markdown(final_answer)
-
+            
+            message_placeholder.markdown(final_answer)
     st.session_state.chat_history[-1] = (question, final_answer)
 
-    # === DEBUGGING SECTION ===
-# Place this at the end of your app.py script
-
+# === COMPLETE DEBUGGING SUITE ===
 st.divider()
 with st.expander("🛠️ Click here for advanced RAG debugging tools"):
     st.subheader("Retriever Debugger")
-    st.warning(
-        "This tool allows you to see exactly which text chunks are being retrieved "
-        "from your vector database for a given question. It bypasses the final AI "
-        "answer generation to show you the raw source material.",
-        icon="🔬"
-    )
-
-    debug_question = st.text_input(
-        "Enter a question to test the retriever:",
-        key="debug_question"
-    )
+    st.warning("This tool shows you the raw chunks retrieved from the vector store for a given question.", icon="🔬")
+    debug_question = st.text_input("Enter a question to test the retriever:", key="debug_question")
 
     if st.button("Test Retriever", key="debug_button"):
         if st.session_state.rag_chain and debug_question:
             retriever = st.session_state.rag_chain.retriever
-            with st.spinner("Finding relevant documents in the vector store..."):
-                try:
-                    retrieved_docs = retriever.get_relevant_documents(debug_question)
-                    st.info(f"Retrieved **{len(retrieved_docs)}** chunks for your question.")
+            with st.spinner("Finding relevant documents..."):
+                retrieved_docs = retriever.get_relevant_documents(debug_question)
+                st.info(f"Retrieved **{len(retrieved_docs)}** chunks for your question.")
+                for i, doc in enumerate(retrieved_docs):
+                    st.markdown(f"--- \n**Chunk {i+1}** | **Source:** `{doc.metadata.get('source', 'Unknown')}`")
+                    if doc.metadata.get('is_image_caption'): st.markdown(f"**Type:** Image Caption | **Image ID:** `{doc.metadata.get('image_file_id', 'N/A')}`")
+                    st.code(doc.page_content, language=None)
 
-                    for i, doc in enumerate(retrieved_docs):
-                        st.markdown(f"--- \n**Chunk {i+1}**")
-                        st.markdown(f"**Source:** `{doc.metadata.get('source', 'Unknown')}`")
-                        
-                        # Check if it's an image caption and display relevant metadata
-                        if doc.metadata.get('is_image_caption'):
-                            st.markdown(f"**Type:** Image Caption")
-                            st.markdown(f"**Image File ID:** `{doc.metadata.get('image_file_id', 'N/A')}`")
-
-                        # Use a code block to preserve whitespace and show the raw text
-                        st.code(doc.page_content, language=None)
-
-                except Exception as e:
-                    st.error(f"An error occurred during retrieval: {e}")
-        elif not debug_question:
-            st.warning("Please enter a question to test.")
-        else:
-            st.error("The RAG chain is not initialized. Please run the app first.")
+    st.subheader("Generation Debugger")
+    st.markdown("Use this to test the final LLM call with a specific piece of context.")
+    if st.session_state.rag_chain:
+        qa_prompt = st.session_state.rag_chain.combine_docs_chain.llm_chain.prompt
+        context_to_test = st.text_area("Paste the exact content of a single chunk here:", height=250)
+        question_to_test = st.text_input("Enter the same question again:", key="generation_debug_question")
+        if st.button("Test Generation", key="generation_debug_button"):
+            if context_to_test and question_to_test:
+                with st.spinner("Manually calling the LLM..."):
+                    formatted_prompt = qa_prompt.format(context=context_to_test, question=question_to_test)
+                    llm = st.session_state.rag_chain.combine_docs_chain.llm_chain.llm
+                    result = llm.invoke(formatted_prompt)
+                    st.info("LLM Output:"); st.write(result.content)
