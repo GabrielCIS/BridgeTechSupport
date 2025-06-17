@@ -142,9 +142,24 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=200):
 def web_search(question):
     """Performs a web search using SerpApi and returns formatted results."""
     try:
-        params = {"engine": "google", "q": question, "api_key": SERPAPI_KEY}
-        resp = requests.get("https://serpapi.com/search", params=params, timeout=5).json()
-        results = resp.get("organic_results", [])[:3]
+        params = {
+            "engine": "google",
+            "q": question,
+            "api_key": SERPAPI_KEY
+        }
+        # Increased timeout for more reliability
+        resp = requests.get("https://serpapi.com/search", params=params, timeout=10)
+        
+        # This line will raise an error for bad responses (like 4xx or 5xx)
+        resp.raise_for_status() 
+        
+        data = resp.json()
+        results = data.get("organic_results", [])[:3]
+        
+        if "error" in data:
+            # SerpApi often returns a 200 OK but with an error message in the JSON
+            return f"Web search failed: SerpApi returned an error - {data.get('error')}"
+
         output = []
         for r in results:
             title = r.get("title")
@@ -152,10 +167,16 @@ def web_search(question):
             snippet = r.get("snippet", "")
             if title and link:
                 output.append(f"[{title}]({link})\n> {snippet}")
+        
         return "\n\n".join(output) if output else "No results found."
-    except Exception as e:
+
+    except requests.exceptions.Timeout:
+        print("Web search failed: The request timed out.")
+        return "Web search failed: The request to SerpApi timed out."
+    except requests.exceptions.RequestException as e:
+        # This will catch most other network-related errors
         print(f"Web search failed: {e}")
-        return "Web search failed."
+        return f"Web search failed: A network error occurred. **Details:** {e}"
 
 # === LANGCHAIN SETUP ===
 
