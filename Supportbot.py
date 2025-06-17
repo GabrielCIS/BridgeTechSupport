@@ -289,3 +289,32 @@ if question := st.chat_input("Ask a question..."):
 
     # Append the final answer to the full chat history
     st.session_state.chat_history[-1] = (question, final_answer)
+
+
+    # === DEBUGGING SECTION ===
+st.divider()
+with st.expander("🛠️ Click here for advanced debugging tools"):
+    st.subheader("Retriever Debugger")
+    st.warning("This tool allows you to see exactly which text chunks are being retrieved for a given question.", icon="🔬")
+
+    debug_question = st.text_input("Enter a question to test the retriever:")
+
+    if st.button("Test Retriever"):
+        if st.session_state.rag_chain and debug_question:
+            retriever = st.session_state.rag_chain.retriever
+            with st.spinner("Finding relevant documents..."):
+                try:
+                    retrieved_docs = retriever.get_relevant_documents(debug_question)
+                    st.info(f"Retrieved **{len(retrieved_docs)}** chunks for your question.")
+
+                    for i, doc in enumerate(retrieved_docs):
+                        st.markdown(f"--- \n**Chunk {i+1} (Source: {doc.metadata.get('source', 'Unknown')})**")
+                        # Using a code block to preserve formatting and show the raw text
+                        st.code(doc.page_content, language=None)
+
+                except Exception as e:
+                    st.error(f"An error occurred during retrieval: {e}")
+        elif not debug_question:
+            st.warning("Please enter a question to test.")
+        else:
+            st.error("The RAG chain is not initialized.")
