@@ -126,7 +126,7 @@ def download_and_process_files(folder_id, service):
 
     return documents
 
-def chunk_documents(documents, chunk_size=1000, chunk_overlap=200):
+def chunk_documents(documents, chunk_size=1000, chunk_overlap=400):
     """Splits documents into smaller chunks for processing."""
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
