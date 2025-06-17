@@ -149,7 +149,7 @@ def generate_caption_for_image(file_id, service):
         print(f"ERROR: Failed to generate caption for image {file_id} using Gemini. Reason: {e}")
         return None
 
-def chunk_documents(documents, chunk_size=1500, chunk_overlap=400):
+def chunk_documents(documents, chunk_size=1500, chunk_overlap=500):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     return text_splitter.split_documents(documents)
 
@@ -196,7 +196,7 @@ def setup_rag_chain(_vectorstore):
     CUSTOM_QUESTION_PROMPT = PromptTemplate.from_template(qa_template)
     llm = ChatOpenAI(temperature=0, model_name="gpt-4")
     memory = ConversationBufferWindowMemory(k=3, return_messages=True, memory_key="chat_history", output_key='answer')
-    retriever = _vectorstore.as_retriever(search_kwargs={"k": 5})
+    retriever = _vectorstore.as_retriever(search_kwargs={"k": 10})
     return ConversationalRetrievalChain.from_llm(llm=llm, retriever=retriever, memory=memory, condense_question_prompt=CONDENSE_QUESTION_PROMPT, combine_docs_chain_kwargs={"prompt": CUSTOM_QUESTION_PROMPT}, return_source_documents=True)
 
 
