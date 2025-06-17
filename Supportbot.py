@@ -196,7 +196,7 @@ def setup_rag_chain(_vectorstore):
 
     llm = ChatOpenAI(temperature=0, model_name="gpt-4")
     memory = ConversationBufferWindowMemory(k=3, return_messages=True, memory_key="chat_history", output_key='answer')
-    retriever = _vectorstore.as_retriever(search_kwargs={"k": 3})
+    retriever = _vectorstore.as_retriever(search_kwargs={"k": 5})
 
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
